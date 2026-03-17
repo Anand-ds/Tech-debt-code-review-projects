@@ -1,0 +1,42 @@
+name: Auto Score Tech Debt
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+
+            const extract = (label) => {
+              const match = comment.match(new RegExp(`${label}:\\s*(\\d+)`, "i"));
+              return match ? parseInt(match[1]) : null;
+            };
+
+            const impact = extract("Impact");
+            const risk = extract("Risk");
+            const frequency = extract("Frequency");
+            const cost = extract("Cost");
+
+            if ([impact, risk, frequency, cost].includes(null)) return;
+
+            const score = ((impact * 2) + (risk * 2) + frequency - cost) / 2;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `🧮 **Auto‑calculated Priority Score:** ${score.toFixed(2)}`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: ["scored"]
+            });
