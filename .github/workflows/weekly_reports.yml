@@ -1,0 +1,44 @@
+name: Weekly Tech Debt Report
+
+on:
+  schedule:
+    - cron: "0 9 * * MON"
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: "tech-debt",
+              state: "open"
+            });
+
+            const highPriority = issues.data.filter(i =>
+              i.labels.some(l => l.name === "severity:critical" || l.name === "severity:high")
+            );
+
+            const unscored = issues.data.filter(i =>
+              !i.labels.some(l => l.name === "scored")
+            );
+
+            const body = `
+### 🧾 Weekly Tech Debt Summary
+
+- Total open items: **${issues.data.length}**
+- High priority items: **${highPriority.length}**
+- Unscored items: **${unscored.length}**
+
+Please review and score outstanding items.
+`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "Weekly Tech Debt Summary",
+              body
+            });
