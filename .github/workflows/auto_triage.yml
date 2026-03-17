@@ -1,0 +1,63 @@
+name: Auto Triage Tech Debt
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const number = issue.number;
+
+            // Base labels
+            if (issue.title.startsWith("[Tech Debt]")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: number,
+                labels: ["tech-debt", "needs-review"]
+              });
+            }
+
+            // Severity detection
+            const severityMap = {
+              "critical": "severity:critical",
+              "high": "severity:high",
+              "medium": "severity:medium",
+              "low": "severity:low"
+            };
+
+            for (const key in severityMap) {
+              if (issue.body.toLowerCase().includes(`severity: ${key}`)) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: number,
+                  labels: [severityMap[key]]
+                });
+              }
+            }
+
+            // Component-based auto-assignment
+            const componentOwners = {
+              "auth": "team-auth",
+              "api": "team-api",
+              "frontend": "team-frontend",
+              "database": "team-db"
+            };
+
+            for (const component in componentOwners) {
+              if (issue.body.toLowerCase().includes(component)) {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: number,
+                  assignees: [componentOwners[component]]
+                });
+              }
+            }
