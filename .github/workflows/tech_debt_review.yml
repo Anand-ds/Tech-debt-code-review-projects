@@ -1,0 +1,35 @@
+name: Tech Debt Review Automation
+
+on:
+  schedule:
+    - cron: "0 9 * * MON" # Weekly review reminder
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send reminder for open tech debt issues
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: "tech-debt",
+              state: "open"
+            });
+
+            if (issues.data.length === 0) {
+              console.log("No open tech debt issues.");
+              return;
+            }
+
+            const body = `There are currently **${issues.data.length}** open tech debt items. Please review them.`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "Weekly Tech Debt Review Reminder",
+              body
+            });
