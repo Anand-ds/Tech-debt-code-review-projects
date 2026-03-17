@@ -1,0 +1,86 @@
+name: Tech Debt Automation
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "0 9 * * MON" # Weekly reminder
+  workflow_dispatch:
+
+jobs:
+  label_issues:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues'
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (issue.title.startsWith("[Tech Debt]")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["tech-debt"]
+              });
+            }
+            if (issue.title.startsWith("[Review]")) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ["tech-debt-review"]
+              });
+            }
+
+  score_review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment'
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const body = context.payload.comment.body;
+            const scoreMatch = body.match(/Score:\s*(\d+(\.\d+)?)/i);
+            if (!scoreMatch) return;
+
+            const score = scoreMatch[1];
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `🧮 **Priority Score Recorded:** ${score}`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: ["scored"]
+            });
+
+  weekly_reminder:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: "tech-debt",
+              state: "open"
+            });
+
+            if (issues.data.length === 0) return;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "Weekly Tech Debt Review Reminder",
+              body: `There are **${issues.data.length}** open tech debt items awaiting review.`
+            });
