@@ -1,0 +1,51 @@
+name: Auto Assignment for Tech Debt
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body.toLowerCase();
+
+            const severityReviewers = {
+              "critical": ["lead-architect", "cto"],
+              "high": ["senior-engineer"],
+              "medium": ["tech-lead"],
+              "low": ["developer"]
+            };
+
+            for (const sev in severityReviewers) {
+              if (body.includes(`severity: ${sev}`)) {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  reviewers: severityReviewers[sev]
+                });
+              }
+            }
+
+            const componentTeams = {
+              "auth": ["team-auth"],
+              "api": ["team-api"],
+              "frontend": ["team-frontend"],
+              "database": ["team-db"]
+            };
+
+            for (const comp in componentTeams) {
+              if (body.includes(comp)) {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  assignees: componentTeams[comp]
+                });
+              }
+            }
