@@ -1,0 +1,133 @@
+name: Project Board Automation
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, edited, closed]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+jobs:
+  update_project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update GitHub Project
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const projectId = "YOUR_PROJECT_ID"; // Replace with your project ID
+            const issue = context.payload.issue || context.payload.pull_request;
+            const number = issue.number;
+
+            // Helper: fetch project item for this issue
+            async function getProjectItem() {
+              const query = `
+                query($projectId: ID!, $number: Int!) {
+                  repository(owner: "${context.repo.owner}", name: "${context.repo.repo}") {
+                    issue(number: $number) {
+                      id
+                      projectItems(first: 10) {
+                        nodes {
+                          id
+                          project {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              const result = await github.graphql(query, {
+                projectId,
+                number
+              });
+
+              const items = result.repository.issue.projectItems.nodes;
+              return items.find(i => i.project.id === projectId);
+            }
+
+            // Helper: add issue to project if missing
+            async function addToProject(issueId) {
+              const mutation = `
+                mutation($projectId: ID!, $issueId: ID!) {
+                  addProjectV2ItemById(input: {
+                    projectId: $projectId,
+                    contentId: $issueId
+                  }) {
+                    item {
+                      id
+                    }
+                  }
+                }
+              `;
+              return await github.graphql(mutation, {
+                projectId,
+                issueId
+              });
+            }
+
+            // Helper: update a project field
+            async function updateField(itemId, fieldId, value) {
+              const mutation = `
+                mutation($itemId: ID!, $fieldId: ID!, $value: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $value }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `;
+              return await github.graphql(mutation, {
+                itemId,
+                fieldId,
+                value
+              });
+            }
+
+            // Fetch issue details
+            const issueData = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number
+            });
+
+            const issueId = issueData.data.node_id;
+            let projectItem = await getProjectItem();
+
+            // Add to project if missing
+            if (!projectItem) {
+              console.log("Adding issue to project…");
+              const added = await addToProject(issueId);
+              projectItem = { id: added.addProjectV2ItemById.item.id };
+            }
+
+            const labels = issueData.data.labels.map(l => l.name.toLowerCase());
+
+            // Column mapping
+            const columnMap = {
+              "needs-review": "COLUMN_ID_INCOMING",
+              "tech-debt-review": "COLUMN_ID_UNDER_REVIEW",
+              "scored": "COLUMN_ID_SCORED",
+              "in-progress": "COLUMN_ID_IN_PROGRESS",
+              "in-validation": "COLUMN_ID_VALIDATION",
+              "done": "COLUMN_ID_DONE"
+            };
+
+            // Move card based on labels
+            for (const label of labels) {
+              if (columnMap[label]) {
+                await updateField(projectItem.id, "STATUS_FIELD_ID", columnMap[label]);
+              }
+            }
+
+            // Auto-close when PR closes issue
+            if (context.eventName === "pull_request" && context.payload.pull_request.merged) {
+              await updateField(projectItem.id, "STATUS_FIELD_ID", columnMap["done"]);
+            }
+
+            console.log("Project board updated successfully.");
