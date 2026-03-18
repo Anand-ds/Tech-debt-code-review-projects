@@ -27,7 +27,7 @@ jobs:
             );
 
             const body = `
-### 🧾 Weekly Tech Debt Summary
+### Weekly Tech Debt Summary
 
 - Total open items: **${issues.data.length}**
 - High priority items: **${highPriority.length}**
